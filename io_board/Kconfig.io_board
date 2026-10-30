@@ -1,0 +1,3 @@
+# TESS IO Controller board
+config BOARD_IO_BOARD
+	select SOC_STM32H743XX

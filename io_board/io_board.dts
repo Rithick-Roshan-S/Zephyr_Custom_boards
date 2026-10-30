@@ -1,0 +1,389 @@
+/*
+ * TESS IO Controller board (Robot CPU "top board"): STM32H743ZIT6 + DP83848 PHY.
+ * Everything below comes from the hardware document (section 3.2 / 3.5.1.a).
+ *
+ * NOT included yet (not needed for blink / Ethernet): ADC pins, DAC, PWM timers,
+ * QSPI flash W25Q256 (bank 2) and the DS18B20 1-wire on UART4 (PC10).
+ */
+
+/dts-v1/;
+#include <st/h7/stm32h743Xi.dtsi>
+#include <st/h7/stm32h743zitx-pinctrl.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	model = "TESS IO Controller board (STM32H743ZIT6)";
+	compatible = "tess,io-board";
+
+	chosen {
+		/* Console: change to the UART you wire to your USB-serial adapter */
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,dtcm = &dtcm;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led_fault: led_fault {
+			gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+			label = "LED FAULT";
+		};
+		led_error: led_error {
+			gpios = <&gpiog 0 GPIO_ACTIVE_HIGH>;
+			label = "LED ERROR";
+		};
+	};
+
+	aliases {
+		led0 = &led_fault;
+		led1 = &led_error;
+	};
+
+	/*
+	 * Named GPIO groups from the document. In C use for example:
+	 *   GPIO_DT_SPEC_GET_BY_IDX(DT_PATH(zephyr_user), op_gpios, 0)   -> OP1
+	 * Index 0 = number 1 of the name (IN1, OP1, STATUS12 ...).
+	 */
+	zephyr,user {
+		/* IN1..IN20  (24 V sensor / switch inputs) */
+		in-gpios = <&gpiod 0 GPIO_ACTIVE_HIGH>,
+		<&gpiod 1 GPIO_ACTIVE_HIGH>,
+		<&gpioa 9 GPIO_ACTIVE_HIGH>,
+		<&gpioc 12 GPIO_ACTIVE_HIGH>,
+		<&gpioc 9 GPIO_ACTIVE_HIGH>,
+		<&gpioa 8 GPIO_ACTIVE_HIGH>,
+		<&gpiog 7 GPIO_ACTIVE_HIGH>,
+		<&gpioc 8 GPIO_ACTIVE_HIGH>,
+		<&gpiog 5 GPIO_ACTIVE_HIGH>,
+		<&gpiog 6 GPIO_ACTIVE_HIGH>,
+		<&gpiog 3 GPIO_ACTIVE_HIGH>,
+		<&gpiog 4 GPIO_ACTIVE_HIGH>,
+		<&gpiod 15 GPIO_ACTIVE_HIGH>,
+		<&gpiog 2 GPIO_ACTIVE_HIGH>,
+		<&gpiod 12 GPIO_ACTIVE_HIGH>,
+		<&gpiod 13 GPIO_ACTIVE_HIGH>,
+		<&gpiod 10 GPIO_ACTIVE_HIGH>,
+		<&gpiod 11 GPIO_ACTIVE_HIGH>,
+		<&gpiod 8 GPIO_ACTIVE_HIGH>,
+		<&gpiod 9 GPIO_ACTIVE_HIGH>;
+
+		/* BREAKWIRE1, BREAKWIRE2 */
+		breakwire-gpios = <&gpiod 2 GPIO_ACTIVE_HIGH>,
+		<&gpiod 14 GPIO_ACTIVE_HIGH>;
+
+		/* OP1..OP18 (outputs: contactors, brakes, STO, ...) */
+		op-gpios = <&gpiof 1 GPIO_ACTIVE_HIGH>,
+		<&gpiof 2 GPIO_ACTIVE_HIGH>,
+		<&gpiof 7 GPIO_ACTIVE_HIGH>,
+		<&gpiof 12 GPIO_ACTIVE_HIGH>,
+		<&gpioe 4 GPIO_ACTIVE_HIGH>,
+		<&gpioe 5 GPIO_ACTIVE_HIGH>,
+		<&gpioc 13 GPIO_ACTIVE_HIGH>,
+		<&gpiof 0 GPIO_ACTIVE_HIGH>,
+		<&gpiob 4 GPIO_ACTIVE_HIGH>,
+		<&gpiob 5 GPIO_ACTIVE_HIGH>,
+		<&gpioe 0 GPIO_ACTIVE_HIGH>,
+		<&gpioe 1 GPIO_ACTIVE_HIGH>,
+		<&gpiod 3 GPIO_ACTIVE_HIGH>,
+		<&gpiod 4 GPIO_ACTIVE_HIGH>,
+		<&gpiog 10 GPIO_ACTIVE_HIGH>,
+		<&gpiog 14 GPIO_ACTIVE_HIGH>,
+		<&gpiog 15 GPIO_ACTIVE_HIGH>,
+		<&gpiob 3 GPIO_ACTIVE_HIGH>;
+
+		/* STATUS12, STATUS34, STATUS56, STATUS78, STATUS910, STATUS1112,
+		 * STATUS13, STATUS14, STATUS1516, STATUS1718 (output read-back) */
+		status-gpios = <&gpiof 8 GPIO_ACTIVE_HIGH>,
+		<&gpioe 15 GPIO_ACTIVE_HIGH>,
+		<&gpioe 3 GPIO_ACTIVE_HIGH>,
+		<&gpiof 4 GPIO_ACTIVE_HIGH>,
+		<&gpiob 8 GPIO_ACTIVE_HIGH>,
+		<&gpiob 9 GPIO_ACTIVE_HIGH>,
+		<&gpiod 7 GPIO_ACTIVE_HIGH>,
+		<&gpiog 8 GPIO_ACTIVE_HIGH>,
+		<&gpiog 11 GPIO_ACTIVE_HIGH>,
+		<&gpiob 7 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* ================= GPIO ports ================= */
+&gpioa { status = "okay"; };
+&gpiob { status = "okay"; };
+&gpioc { status = "okay"; };
+&gpiod { status = "okay"; };
+&gpioe { status = "okay"; };
+&gpiof { status = "okay"; };
+&gpiog { status = "okay"; };
+
+/* ================= Clocks =================
+ * Default: internal 64 MHz HSI -> PLL1 -> 480 MHz. Works without any external
+ * clock, so the board always boots. PLL1_Q = 120 MHz (CAN FD kernel clock).
+ *
+ * To use the 25 MHz clock of the board later, replace the three blocks below by:
+ *
+ *   &clk_hsi { status = "disabled"; };
+ *   &clk_hse {
+ *           status = "okay";
+ *           clock-frequency = <DT_FREQ_M(25)>;
+ *           hse-bypass;                // keep ONLY if an oscillator (not a bare crystal) drives OSC_IN
+ *   };
+ *   &pll { clocks = <&clk_hse>; div-m = <5>; mul-n = <192>; div-p = <2>; div-q = <8>; div-r = <2>; status = "okay"; };
+ */
+&clk_hsi {
+	status = "okay";
+};
+
+&pll {
+	clocks = <&clk_hsi>;
+	div-m = <4>;      /* 64 MHz / 4  = 16 MHz  */
+	mul-n = <60>;     /* x 60        = 960 MHz VCO */
+	div-p = <2>;      /* 480 MHz */
+	div-q = <8>;      /* 120 MHz */
+	div-r = <2>;
+	status = "okay";
+};
+
+&rcc {
+	clocks = <&pll>;
+	clock-frequency = <DT_FREQ_M(480)>;
+	d1cpre = <1>;
+	hpre = <2>;       /* AHB 240 MHz */
+	d1ppre = <2>;
+	d2ppre1 = <2>;
+	d2ppre2 = <2>;
+	d3ppre = <2>;
+};
+
+&pwr {
+	power-supply = "ldo";
+};
+
+/* ================= Pin configuration (own nodes, alternate functions from the datasheet) ================= */
+&pinctrl {
+	/* ---- Ethernet MII (all AF11) ---- */
+	io_eth_crs_pa0: io_eth_crs_pa0 {
+		pinmux = <STM32_PINMUX('A', 0, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_rx_clk_pa1: io_eth_rx_clk_pa1 {
+		pinmux = <STM32_PINMUX('A', 1, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_mdio_pa2: io_eth_mdio_pa2 {
+		pinmux = <STM32_PINMUX('A', 2, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_col_pa3: io_eth_col_pa3 {
+		pinmux = <STM32_PINMUX('A', 3, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_rx_dv_pa7: io_eth_rx_dv_pa7 {
+		pinmux = <STM32_PINMUX('A', 7, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_rxd2_pb0: io_eth_rxd2_pb0 {
+		pinmux = <STM32_PINMUX('B', 0, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_rxd3_pb1: io_eth_rxd3_pb1 {
+		pinmux = <STM32_PINMUX('B', 1, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_rx_er_pb10: io_eth_rx_er_pb10 {
+		pinmux = <STM32_PINMUX('B', 10, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_tx_en_pb11: io_eth_tx_en_pb11 {
+		pinmux = <STM32_PINMUX('B', 11, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_mdc_pc1: io_eth_mdc_pc1 {
+		pinmux = <STM32_PINMUX('C', 1, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_txd2_pc2: io_eth_txd2_pc2 {
+		pinmux = <STM32_PINMUX('C', 2, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_tx_clk_pc3: io_eth_tx_clk_pc3 {
+		pinmux = <STM32_PINMUX('C', 3, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_rxd0_pc4: io_eth_rxd0_pc4 {
+		pinmux = <STM32_PINMUX('C', 4, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_rxd1_pc5: io_eth_rxd1_pc5 {
+		pinmux = <STM32_PINMUX('C', 5, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_txd3_pe2: io_eth_txd3_pe2 {
+		pinmux = <STM32_PINMUX('E', 2, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_txd1_pg12: io_eth_txd1_pg12 {
+		pinmux = <STM32_PINMUX('G', 12, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+	io_eth_txd0_pg13: io_eth_txd0_pg13 {
+		pinmux = <STM32_PINMUX('G', 13, AF11)>;
+		slew-rate = "very-high-speed";
+	};
+
+	/* ---- UARTs (RS485 ports, via TD301D485H-A transceivers) ---- */
+	io_usart1_tx_pb14: io_usart1_tx_pb14 {
+		pinmux = <STM32_PINMUX('B', 14, AF4)>;
+	};
+	io_usart1_rx_pb15: io_usart1_rx_pb15 {
+		pinmux = <STM32_PINMUX('B', 15, AF4)>;
+	};
+	io_usart2_tx_pd5: io_usart2_tx_pd5 {
+		pinmux = <STM32_PINMUX('D', 5, AF7)>;
+	};
+	io_usart2_rx_pd6: io_usart2_rx_pd6 {
+		pinmux = <STM32_PINMUX('D', 6, AF7)>;
+	};
+	io_usart6_tx_pc6: io_usart6_tx_pc6 {
+		pinmux = <STM32_PINMUX('C', 6, AF7)>;
+	};
+	io_usart6_rx_pc7: io_usart6_rx_pc7 {
+		pinmux = <STM32_PINMUX('C', 7, AF7)>;
+	};
+	io_uart7_tx_pa15: io_uart7_tx_pa15 {
+		pinmux = <STM32_PINMUX('A', 15, AF11)>;
+	};
+	io_uart7_rx_pf6: io_uart7_rx_pf6 {
+		pinmux = <STM32_PINMUX('F', 6, AF7)>;
+	};
+
+	/* ---- CAN FD ---- */
+	io_fdcan1_rx_pa11: io_fdcan1_rx_pa11 {
+		pinmux = <STM32_PINMUX('A', 11, AF9)>;
+	};
+	io_fdcan1_tx_pa12: io_fdcan1_tx_pa12 {
+		pinmux = <STM32_PINMUX('A', 12, AF9)>;
+	};
+	io_fdcan2_rx_pb12: io_fdcan2_rx_pb12 {
+		pinmux = <STM32_PINMUX('B', 12, AF9)>;
+	};
+	io_fdcan2_tx_pb13: io_fdcan2_tx_pb13 {
+		pinmux = <STM32_PINMUX('B', 13, AF9)>;
+	};
+
+	/* ---- I2C4 (IMU), external 4.7k pull-ups ---- */
+	io_i2c4_scl_pf14: io_i2c4_scl_pf14 {
+		pinmux = <STM32_PINMUX('F', 14, AF4)>;
+		drive-open-drain;
+	};
+	io_i2c4_sda_pf15: io_i2c4_sda_pf15 {
+		pinmux = <STM32_PINMUX('F', 15, AF4)>;
+		drive-open-drain;
+	};
+
+	/* ---- SPI4 (IO expander) ---- */
+	io_spi4_sck_pe12: io_spi4_sck_pe12 {
+		pinmux = <STM32_PINMUX('E', 12, AF5)>;
+		slew-rate = "very-high-speed";
+	};
+	io_spi4_miso_pe13: io_spi4_miso_pe13 {
+		pinmux = <STM32_PINMUX('E', 13, AF5)>;
+		slew-rate = "very-high-speed";
+	};
+	io_spi4_mosi_pe6: io_spi4_mosi_pe6 {
+		pinmux = <STM32_PINMUX('E', 6, AF5)>;
+		slew-rate = "very-high-speed";
+	};
+};
+
+/* ================= UARTs ================= */
+&usart1 {    /* RS485-2, also the default console */
+	pinctrl-0 = <&io_usart1_tx_pb14 &io_usart1_rx_pb15>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&usart2 {    /* RS485-3 */
+	pinctrl-0 = <&io_usart2_tx_pd5 &io_usart2_rx_pd6>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&usart6 {    /* RS485-1 */
+	pinctrl-0 = <&io_usart6_tx_pc6 &io_usart6_rx_pc7>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&uart7 {     /* RS485-4 */
+	pinctrl-0 = <&io_uart7_tx_pa15 &io_uart7_rx_pf6>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+/* ================= CAN FD ================= */
+&fdcan1 {
+	pinctrl-0 = <&io_fdcan1_rx_pa11 &io_fdcan1_tx_pa12>;
+	pinctrl-names = "default";
+	clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
+		 <&rcc STM32_SRC_PLL1_Q FDCAN_SEL(1)>;
+	status = "okay";
+};
+
+&fdcan2 {
+	pinctrl-0 = <&io_fdcan2_rx_pb12 &io_fdcan2_tx_pb13>;
+	pinctrl-names = "default";
+	clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
+		 <&rcc STM32_SRC_PLL1_Q FDCAN_SEL(1)>;
+	status = "okay";
+};
+
+/* ================= I2C4 (IMU) and SPI4 (IO expander) ================= */
+&i2c4 {
+	pinctrl-0 = <&io_i2c4_scl_pf14 &io_i2c4_sda_pf15>;
+	pinctrl-names = "default";
+	clock-frequency = <400000>;
+	status = "okay";
+};
+
+&spi4 {
+	pinctrl-0 = <&io_spi4_sck_pe12 &io_spi4_miso_pe13 &io_spi4_mosi_pe6>;
+	pinctrl-names = "default";
+	status = "okay";    /* no chip-select listed in the document */
+};
+
+/* ================= Ethernet: DP83848 in MII mode (default of the board) ================= */
+&mac {
+	pinctrl-0 = <&io_eth_crs_pa0 &io_eth_rx_clk_pa1 &io_eth_col_pa3 &io_eth_rx_dv_pa7
+		     &io_eth_rxd2_pb0 &io_eth_rxd3_pb1 &io_eth_rx_er_pb10 &io_eth_tx_en_pb11
+		     &io_eth_txd2_pc2 &io_eth_tx_clk_pc3 &io_eth_rxd0_pc4 &io_eth_rxd1_pc5
+		     &io_eth_txd3_pe2 &io_eth_txd1_pg12 &io_eth_txd0_pg13>;
+	pinctrl-names = "default";
+	phy-connection-type = "mii";
+	phy-handle = <&eth_phy>;
+	status = "okay";
+};
+
+&mdio {
+	pinctrl-0 = <&io_eth_mdio_pa2 &io_eth_mdc_pc1>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	/* DP83848 PHYAD strap on this board = 3 (confirmed by MDIO scan) */
+	eth_phy: ethernet-phy@3 {
+		compatible = "ethernet-phy";
+		reg = <3>;
+	};
+};
+
+
+&clk_hsi48 {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
+};

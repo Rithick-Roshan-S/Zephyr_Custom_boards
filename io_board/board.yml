@@ -1,0 +1,6 @@
+board:
+  name: io_board
+  full_name: TESS IO Controller Board
+  vendor: tess
+  socs:
+    - name: stm32h743xx

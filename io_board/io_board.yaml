@@ -1,0 +1,15 @@
+identifier: io_board
+name: TESS IO Controller Board
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+ram: 512
+flash: 2048
+supported:
+  - gpio
+  - uart
+  - can
+  - i2c
+  - spi
+  - netif:eth

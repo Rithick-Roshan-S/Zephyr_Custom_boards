@@ -1,0 +1,6 @@
+board:
+  name: tess_h753_led
+  full_name: Nucleo H753ZI
+  vendor: st
+  socs:
+    - name: stm32h753xx
